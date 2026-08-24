@@ -1376,6 +1376,7 @@ describe('InstanceAiSettingsService', () => {
 				type: credential.type,
 				data: {
 					apiKey: 'admin-key',
+					url: 'https://gateway.example.com/v1',
 					organizationId: 'org-1',
 					header: true,
 					headerName: 'x-proxy-key',
@@ -1401,8 +1402,8 @@ describe('InstanceAiSettingsService', () => {
 			);
 
 			expect(result).toEqual({
-				id: 'openai/gpt-4.1',
-				url: '',
+				id: 'custom/gpt-4.1',
+				url: 'https://gateway.example.com/v1',
 				apiKey: 'admin-key',
 				headers: { 'OpenAI-Organization': 'org-1', 'x-proxy-key': 'proxy-key' },
 			});
@@ -1964,14 +1965,52 @@ describe('InstanceAiSettingsService', () => {
 			expect(resolveModelConfig).toHaveBeenCalledTimes(2);
 		});
 
-		it('builds and validates a model config from a draft connection', () => {
+		it.each(['https://api.openai.com/v1', 'https://api.openai.com/v1///'])(
+			'uses the native OpenAI provider for the official base URL %s',
+			(url) => {
+				expect(
+					service.buildModelConfigForConnection(
+						{ type: 'openAiApi', data: { apiKey: 'key', url } },
+						'gpt-5.4',
+					),
+				).toEqual({ id: 'openai/gpt-5.4', url, apiKey: 'key' });
+			},
+		);
+
+		it('uses the compatible provider and preserves custom OpenAI connection settings', () => {
+			expect(
+				service.buildModelConfigForConnection(
+					{
+						type: 'openAiApi',
+						data: {
+							apiKey: 'key',
+							url: 'https://gateway.example.com/v1',
+							organizationId: 'org-1',
+							header: true,
+							headerName: 'x-gateway-key',
+							headerValue: 'gateway-key',
+						},
+					},
+					'gpt-5.4',
+				),
+			).toEqual({
+				id: 'custom/gpt-5.4',
+				url: 'https://gateway.example.com/v1',
+				apiKey: 'key',
+				headers: { 'OpenAI-Organization': 'org-1', 'x-gateway-key': 'gateway-key' },
+			});
+		});
+
+		it('keeps an API-key-only connection on the native OpenAI provider', () => {
 			expect(
 				service.buildModelConfigForConnection(
 					{ type: 'openAiApi', data: { apiKey: 'key' } },
 					'gpt-5.4',
 				),
 			).toEqual({ id: 'openai/gpt-5.4', url: '', apiKey: 'key' });
+		});
 
+		it('rejects unsupported and incomplete draft model connections', () => {
 			expect(() =>
 				service.buildModelConfigForConnection(
 					{ type: 'braveSearchApi', data: { apiKey: 'key' } },
